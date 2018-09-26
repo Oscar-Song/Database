@@ -4,8 +4,11 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.ResultSet;
+import java.sql.PreparedStatement;
+import java.sql.DatabaseMetaData;
 import java.util.Properties;
-
+import java.util.HashMap;
 /**
  * This class demonstrates how to connect to MySQL and run some basic commands.
  * 
@@ -69,7 +72,7 @@ public class DBDemo {
 		Properties connectionProps = new Properties();
 		connectionProps.put("user", this.userName);
 		connectionProps.put("password", this.password);
-
+		connectionProps.setProperty("useSSL", "false");
 		conn = DriverManager.getConnection("jdbc:mysql://"
 				+ this.serverName + ":" + this.portNumber + "/" + this.dbName,
 				connectionProps);
@@ -113,20 +116,70 @@ public class DBDemo {
 		}
 
 		// Create a table
+		
 		try {
-		    String createString =
-			        "CREATE TABLE " + this.tableName + " ( " +
-			        "ID INTEGER NOT NULL, " +
-			        "NAME varchar(40) NOT NULL, " +
-			        "STREET varchar(40) NOT NULL, " +
-			        "CITY varchar(20) NOT NULL, " +
-			        "STATE char(2) NOT NULL, " +
-			        "ZIP char(5), " +
-			        "PRIMARY KEY (ID))";
-			this.executeUpdate(conn, createString);
-			System.out.println("Created a table");
+			DatabaseMetaData dbm = conn.getMetaData();
+			ResultSet rs = dbm.getTables(null, null, this.tableName, null);
+			//If table doesn't exist
+			if(!rs.next()) {
+				String createString =
+				        "CREATE TABLE " + this.tableName + " ( " +
+				        "NAME varchar(40) NOT NULL, " +
+				        "AGE INTEGER NOT NULL, " +
+				        "PRIMARY KEY (NAME))";
+				this.executeUpdate(conn, createString);
+				System.out.println("Created a table");
+			}	    
 	    } catch (SQLException e) {
 			System.out.println("ERROR: Could not create the table");
+			e.printStackTrace();
+			return;
+		}
+		
+		//Insert to the table
+		String insertStr = "INSERT INTO " + this.tableName + " (NAME, AGE)" + 
+				"VALUES (?,?)";
+		HashMap<String, Integer> map = new HashMap<String, Integer>();
+		map.put("Tom", 36);
+		map.put("Jerry", 32);
+		map.put("Tony", 40);
+		map.put("Steve", 35);
+		try {
+			PreparedStatement statement = conn.prepareStatement(insertStr);
+			for(String name : map.keySet()) {
+				if(hasRecord(conn,name)) {
+					continue;
+				}
+				statement.setString(1, name);
+				statement.setInt(2, map.get(name));
+				statement.addBatch();
+			}
+			statement.executeBatch();
+			System.out.println("Inserted a table");
+		} catch(SQLException e) {
+			System.out.println("ERROR: Could not insert into the table");
+			e.printStackTrace();
+			return;
+		}
+		
+		//Select from the table
+		try {
+			Statement stmt = conn.createStatement();
+			String queryString = 
+					"SELECT NAME " +
+					"FROM " + this.tableName + " " +
+					"WHERE AGE = " +
+					"	(SELECT MAX(AGE) " +
+					"	FROM " + this.tableName+")";
+			System.out.println(queryString);
+			ResultSet rs = stmt.executeQuery(queryString);
+			System.out.println("Query the table");
+			while(rs.next()) {
+				String name = rs.getString("NAME");
+				System.out.println("Name: " + name);
+			}
+		} catch(SQLException e) {
+			System.out.println("ERROR: Could not query the table");
 			e.printStackTrace();
 			return;
 		}
@@ -143,6 +196,13 @@ public class DBDemo {
 		}
 	}
 	
+	private boolean hasRecord(Connection conn, String id) throws SQLException{
+		String sql = "Select 1 from "+this.tableName + " where NAME = ?";
+		PreparedStatement ps = conn.prepareStatement(sql);
+		ps.setString(1, id);
+		ResultSet rs = ps.executeQuery();
+		return rs.next();
+	}
 	/**
 	 * Connect to the DB and do some stuff
 	 */
